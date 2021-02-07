@@ -1,4 +1,8 @@
 #include <errno.h>
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <iostream>
 #include <string.h>
 #include <stdio.h>
@@ -25,7 +29,8 @@ int main()
     cin >> if_name;
 
     size_t if_name_len=strlen(if_name);
-    if (if_name_len<sizeof(ifr.ifr_name)) {
+    
+    if (if_name_len < sizeof(ifr.ifr_name)) {
         memcpy(ifr.ifr_name,if_name,if_name_len);
         ifr.ifr_name[if_name_len]=0;
     } else {
@@ -34,6 +39,7 @@ int main()
     }
 
     fd = socket(AF_INET, SOCK_DGRAM, 0);
+
     if(fd<0) {
         cout << strerror(errno);
 	return -1;
@@ -48,23 +54,60 @@ int main()
 	cout << "4. Broadcast address" << endl;
 	cout << "0. Exit" << endl << endl;
 	cin >> selection;
+
 	switch(selection) {
-        case 1:
+        
+	case 1:
             ret = ioctl(fd, SIOCGIFHWADDR, &ifr);
-            if(ret<0) {
+            
+	    if(ret<0) {
                 cout << strerror(errno);
             } else if(ifr.ifr_hwaddr.sa_family!=ARPHRD_ETHER) {
                 cout << "not an Ethernet interface" << endl;
-            } else {
+	    } else {
                 mac=(unsigned char*)ifr.ifr_hwaddr.sa_data;
                 printf("MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n", mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
 	    }
             break;
-        case 2:
+        
+	case 2:
+            ret = ioctl(fd, SIOCGIFADDR, &ifr);
+            
+	    if(ret<0) {
+                cout << strerror(errno);
+            } else {
+		struct sockaddr_in* ipaddr = (struct sockaddr_in*)&ifr.ifr_addr;
+		cout << "IP address:" << inet_ntoa(ipaddr->sin_addr) << endl;
+	    }
             break;
-        case 3:
+        
+	    
+            
+        
+	case 3:
+	    
+	    ret = ioctl(fd, SIOCGIFNETMASK, &ifr);
+	    
+	    if(ret<0) {
+                cout << strerror(errno);
+            } else {
+                struct sockaddr_in* netmask = (struct sockaddr_in*)&ifr.ifr_netmask;
+		cout << "Net Mask: "<< inet_ntoa(netmask->sin_addr) << endl;
+	    }
+
             break;
-        case 4:
+        
+	case 4:
+
+	    ret = ioctl(fd,SIOCGIFBRDADDR, &ifr);
+            
+	    if(ret<0) {
+                cout << strerror(errno);
+            } else {
+                struct sockaddr_in* broadaddr = (struct sockaddr_in*)&ifr.ifr_broadaddr;
+		printf("Broadcast Adress: %s\n",inet_ntoa(broadaddr->sin_addr));
+	    }
+
             break;
         }
 	if(selection!=0) {
