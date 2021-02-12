@@ -1,3 +1,5 @@
+#Name: Musaddiqur Rahman
+#id: 106932189
 CC=g++
 CFLAGS+=-Wall
 FILE=etherCtrl.cpp
