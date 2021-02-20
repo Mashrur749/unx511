@@ -23,7 +23,8 @@ void unregister_device(void);
 //TODO: Function prototypes for the read and ioctl functions
 static int hardware_device_open(struct inode *inode, struct file *file);
 static int hardware_device_close(struct inode *inode, struct file *file);
-
+static ssize_t hardware_device_read(struct file *filp, char __user *buf, size_t len, loff_t *off);
+static long hardware_device_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 /*===============================================================================================*/
 static int hardware_device_init(void)
 {
@@ -50,8 +51,10 @@ static struct file_operations simple_driver_fops =
 {
     .owner = THIS_MODULE,
     //TODO: Function pointers for the read and ioctl functions
+    .read = hardware_device_read,
     .open = hardware_device_open,
     .release = hardware_device_close,
+    .unlocked_ioctl = hardware_device_ioctl
 };
 
 /*===============================================================================================*/
@@ -142,10 +145,26 @@ static int hardware_device_close(struct inode *inode, struct file *file)
 static ssize_t hardware_device_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 {
     //TODO: Implement the read function
+    copy_to_user(buf, buffer, BUF_LEN);
+    printk(KERN_INFO "hardware_device_read invoked\n");
+    return BUF_LEN;
+
 }
 
 /*===============================================================================================*/
 static long hardware_device_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
     //TODO: Implement the ioctl function
+        switch(cmd) {
+        case HARDWARE_DEVICE_HALT:
+            printk(KERN_INFO "hardware_device_ioctl invoked to halt the hardware\n");
+            is_halt = true;
+            break;
+        case HARDWARE_DEVICE_RESUME:
+	    printk(KERN_INFO "hardware_device_ioctl invoked to resume the hardware\n");
+            is_halt = false;
+            break;
+    }
+    return 0;
+
 }
