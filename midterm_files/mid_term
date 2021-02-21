@@ -1,0 +1,550 @@
+CC=g++
+CFLAGS=-I./kernel
+CFLAGS+=-Wall
+FILES1=processMon.cpp
+FILES2=memMonitor.cpp
+FILES3=fileMon.cpp
+
+#Question 1: How many binaries are created if "make all" is executed from the command line?
+processMon: $(FILES1)
+	$(CC) $(CFLAGS) $(FILES1) -o processMon
+
+memMonitor: $(FILES2)
+	$(CC) $(CFLAGS) $(FILES2) -o memMonitor
+
+fileMon: $(FILES3)
+	$(CC) $(CFLAGS) $(FILES3) -o fileMon
+
+clean:
+	rm -f *.o processMon memMonitor fileMon
+
+all: processMon memMonitor fileMon
+\n\n
+//processMon.cpp - A process monitor for memory usage
+//
+// 11-Feb-21  M. Watler         Created.
+
+#include <fcntl.h>
+#include <fstream>
+#include <cstring>
+#include <iostream>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include "memoryUsage.h"
+
+using namespace std;
+const int NUM=2;
+const int MAXBUF=64;
+
+int processMonitor();
+bool isRunning;
+bool isParent;
+
+pid_t childPid[NUM];
+char key[MAXBUF];
+int fd;
+
+char args[NUM][MAXBUF] = {"./fileMon", "./memMonitor"};
+
+static void sigHandler(int sig) {
+    switch(sig) {
+        case SIGINT:
+            cout<<"processMonitor: SIGINT received"<<endl;
+	    isRunning = false;
+	    break;
+    }
+}
+
+int main()
+{
+    //Question 2: What happens if the following is executed from the command line: "pkill -2 processMon"
+    struct sigaction action;
+    action.sa_handler = sigHandler;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = 0;
+    sigaction(SIGINT, &action, NULL);
+    //Question 3: What function in the kernel is called when open is called here?
+    fd=open(keyFile, O_RDWR);
+    isParent = true;
+    for(int i=0; i<NUM && isParent; ++i) {
+        childPid[i] = fork();
+	//Question 4: How many processes are running at this point?
+        if(childPid[i]==0) {//the child
+            isParent=false;
+            //Question 5: What function in the kernel is called when read is called here?
+            read(fd, key, MAXBUF);
+	    close(fd);
+            execlp(args[i], args[i], (const char*)key, NULL);
+            //Question 6: Why is it an error if the program continues beyond execlp()?
+	    cout<<strerror(errno)<<endl;
+        }
+    }
+    if(isParent) {
+        sleep(1);
+        //Question 7: What function in the kernel is called when ioctl is called here?
+        ioctl(fd, KEY_GENERATOR_CHANGE_KEY, NULL);
+        processMonitor();
+    }
+
+    for(int i=0; i<NUM; ++i) {
+        //Question 8: What function in the child processes is called when they receive a SIGINT?
+        kill(childPid[i], SIGINT);
+    }
+    cout << "pid:" << getpid() << " Finished!" << endl;
+
+    close(fd);
+
+    return 0;
+}
+
+int processMonitor()
+{
+    int status=-1;
+    pid_t pid=0;
+
+    isRunning = true;
+    while(isRunning && pid>=0) {
+        //Question 9: What are we waiting on here?
+        pid=wait(&status);
+	char buf[MAXBUF];
+        //Question 10: What is processMon attempting to do with the log file?
+        int openFlags = O_RDWR | O_CREAT | O_APPEND;
+        mode_t filePerms = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
+	int fdLog = open(logFile, openFlags, filePerms);
+	int flags = fcntl(fdLog, F_GETFL);
+	flags = flags | O_EXCL;
+	fcntl(fdLog, F_SETFL, flags);
+	int len=sprintf(buf, "\nprocessMonitor: status:%d The child pid:%d has finished\n", status, pid);
+	write(fdLog, buf, len);
+	bool isFound=false;
+	for(int i=0; i<NUM && isParent && !isFound; ++i) {
+            if(pid==childPid[i]) {
+                isFound=true;
+	        len=sprintf(buf, "processMonitor: Restart the child process\n\n");
+		write(fdLog, buf, len);
+		flags = flags & ~O_EXCL;
+                //Question 11: What is processMon attempting to do with the log file now?
+	        fcntl(fdLog, F_SETFL, flags);
+		close(fdLog);
+                childPid[i] = fork();
+                if(childPid[i]==0) {//the child
+                    isParent=false;
+                    read(fd, key, MAXBUF);
+		    close(fd);
+		    //Question 12: Why are we invoking execlp() again here?
+                    execlp(args[i], args[i], (const char*)key, NULL);
+	            cout<<strerror(errno)<<endl;
+                }
+            }	
+        }
+	sleep(1);
+        ioctl(fd, KEY_GENERATOR_CHANGE_KEY, NULL);
+    }
+
+    return 0;
+}
+//memMonitor.cpp - memory monitor
+//
+// 11-Jan-21  M. Watler         Created.
+//
+#include <iostream>
+#include <signal.h>
+#include <string.h>
+#include <fcntl.h>
+#include <fstream>
+#include <unistd.h>
+#include "memoryUsage.h"
+
+using namespace std;
+
+const int MAXBUF=64;
+bool isRunning;
+
+static void sigHandler(int sig) {
+    switch(sig) {
+        case SIGINT:
+            cout<<"memMonitor: SIGINT received"<<endl;
+            isRunning = false;
+            break;
+        case SIGKILL:
+            cout<<"memMonitor: SIGKILL ignored"<<endl;
+            break;
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    char key1[MAXBUF], key2[MAXBUF];
+    int fd, fdOut;
+    int valid;
+
+    strncpy(key1, argv[1], MAXBUF);
+    fd=open(keyFile, O_RDWR);
+    //Question 13: This appears to be reading a file under /dev. What is it really doing?
+    read(fd, key2, MAXBUF);
+    close(fd);
+    valid=strcmp(key1, key2);
+    if(valid!=0) {
+        cout<<"Invalid key, aborting..."<<endl;
+    } else {
+        //Question 14: What happens if memMonitor receives a SIGKILL?
+        //Question 15: What happens if memMonitor receives a ctrl-C?
+        struct sigaction action;
+        action.sa_handler = sigHandler;
+        sigemptyset(&action.sa_mask);
+        action.sa_flags = 0;
+        sigaction(SIGINT, &action, NULL);
+
+        //Question 16: Describe these open flags
+        int openFlags = O_RDWR | O_CREAT | O_APPEND;
+        //Question 17: Describe these file permissions
+        mode_t filePerms = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
+        fdOut = open(logFile, openFlags, filePerms);
+        string modelName, cpuMhz;
+        string MemTotal, MemFree, MemAvailable;
+        string procRunning, procBlocked;
+        string uptime, idle;
+        ifstream infile;
+	isRunning = true;
+
+        while(isRunning) {
+            // The file /proc/cpuinfo contains a collection of CPU and
+            // system architecture dependent items
+            infile.open("/proc/cpuinfo");
+            if(infile.is_open()) {
+                string data;
+                bool dataFound = false;
+                while(!dataFound && !infile.eof()) {
+                    infile >> data;
+                    // Search for model name
+                    if(data=="model") {
+                        infile >> data;
+                        if(data=="name") {
+                            infile >> data;
+                            getline(infile, modelName);
+                        }
+                    // Search for cpu speed
+                    } else if(data=="cpu") {
+                        infile >> data;
+                        if(data=="MHz") {
+                            infile >> cpuMhz;
+                            infile >> cpuMhz;
+                            dataFound = true;
+                        }
+                    }
+                }
+                infile.close();
+            }
+
+            // The file /proc/meminfo reports statistics about memory usage on the system.
+            infile.open("/proc/meminfo");
+            if(infile.is_open()) {
+                string data;
+                infile >> data;
+                infile >> MemTotal;
+                infile >> data;
+                infile >> data;
+                infile >> MemFree;
+                infile >> data;
+                infile >> data;
+                infile >> MemAvailable;
+                infile.close();
+            }
+
+            // The file /proc/stat reports kernel/system statistics
+            infile.open("/proc/stat");
+            if(infile.is_open()) {
+            string data;
+                bool dataFound = false;
+                while(!dataFound && !infile.eof()) {
+                    infile >> data;
+                    if(data=="procs_running") {
+                        infile >> procRunning;
+                    } else if(data=="procs_blocked") {
+                        infile >> procBlocked;
+                        dataFound = true;
+                    }
+                }
+                infile.close();
+            }
+    
+            // The file /proc/uptime contains the uptime of the system (seconds),
+            // and the amount of time spent in idle process (seconds)
+            infile.open("/proc/uptime");
+            if(infile.is_open()) {
+                infile >> uptime;
+                infile >> idle;
+                infile.close();
+            }
+    
+            // Display all stats and then sleep
+            char buf[MAXBUF];
+	    int len=sprintf(buf, "Model Name: %s CPU MHz: %s\n", modelName.c_str(), cpuMhz.c_str());
+	    write(fdOut, buf, len);
+	    len=sprintf(buf, "Mem Total: %s Mem Free: %s Mem Avail:%s\n", MemTotal.c_str(), MemFree.c_str(), MemAvailable.c_str());
+	    write(fdOut, buf, len);
+	    len=sprintf(buf, "Procs Running: %s Procs Blocked: %s\n", procRunning.c_str(), procBlocked.c_str());
+	    write(fdOut, buf, len);
+	    len=sprintf(buf, "System Uptime: %s System Idle: %s\n\n", uptime.c_str(), idle.c_str());
+	    write(fdOut, buf, len);
+            sleep(1);
+        }
+        close(fdOut);
+    }
+
+    return 0;
+}
+//fileMon.cpp - log file monitor
+//
+// 11-Feb-21  M. Watler         Created.
+//
+
+#include <fcntl.h>
+#include <iostream>
+#include <signal.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include "memoryUsage.h"
+
+using namespace std;
+bool isRunning;
+const int MAXBUF=64;
+const int THRESHOLD=40000;
+
+static void sigHandler(int sig) {
+    switch(sig) {
+        case SIGINT:
+            cout<<"fileMon: SIGINT received"<<endl;
+            isRunning = false;
+            break;
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    char key1[MAXBUF], key2[MAXBUF];
+    strncpy(key1, argv[1], MAXBUF);
+    int fd=open(keyFile, O_RDWR);
+    read(fd, key2, MAXBUF);
+    close(fd);
+    //Question 18: Where is key1 coming from?
+    //Question 19: Where is key2 coming from?
+    //Question 20: Why are they being compared?
+    int valid=strcmp(key1, key2);
+    if(valid!=0) {
+        cout<<"Invalid key, aborting..."<<endl;
+    } else {
+        struct sigaction action;
+        action.sa_handler = sigHandler;
+        sigemptyset(&action.sa_mask);
+        action.sa_flags = 0;
+        sigaction(SIGINT, &action, NULL);
+
+        isRunning = true;
+        struct stat st;
+        while(isRunning) {
+            stat(logFile, &st);
+            if(st.st_size>THRESHOLD) {
+                int openFlags = O_RDWR | O_CREAT | O_TRUNC;
+                mode_t filePerms = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
+		//Question 21: What do the following two lines effectively do to the log file?
+                fd=open(logFile, openFlags, filePerms);
+		close(fd);
+            }
+            sleep(1);
+        }
+    }
+    return 0;
+}
+// memoryUsage.h - header file for memory monitoring
+//
+// 11-Feb-21  M. Watler         Created.
+//
+#ifndef MEMORY_USAGE_H
+#define MEMORY_USAGE_H
+#include "keyGenerator.h"
+
+//Question 22: Is keyFile (/dev/keygen) a file that we can edit with vim?
+//Question 23: When we execute ls -l on /dev/keygen, we see the following:
+//Question 23 (continued): crw-rw-rw- 1 root root 238, 0 Feb 11 11:30 /dev/keygen
+//Question 23 (continued): What does the c mean in crw-rw-rw-?
+//Question 24: What does the number 238 represent?
+const char keyFile[]="/dev/keygen";
+const char logFile[]="midterm.log";
+
+#endif// MEMORY_USAGE_H
+//keyGenerator.c - A kernel level program for generating a key
+//
+// 11-Feb-21  M. Watler:        Created.
+
+#include <linux/cdev.h>     /* char device stuff */
+#include <linux/errno.h>    /* error codes */
+#include <linux/fs.h> 	    /* file stuff */
+#include <linux/init.h>       /* module_init, module_exit */
+#include <linux/kernel.h>   /* printk() */
+#include <linux/module.h>     /* version info, MODULE_LICENSE, MODULE_AUTHOR, printk() */
+#include <linux/uaccess.h>
+#include "keyGenerator.h"
+
+MODULE_DESCRIPTION("Key Generator Linux driver");
+//Question 25: What is the full name of this license?
+MODULE_LICENSE("GPL");
+#define BUF_LEN 64
+
+int register_device(void);
+void unregister_device(void);
+static ssize_t key_generator_read(struct file *filp, char __user *buf, size_t len, loff_t *off);
+static int key_generator_open(struct inode *inode, struct file *file);
+static int key_generator_close(struct inode *inode, struct file *file);
+static long key_generator_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
+
+/*===============================================================================================*/
+/* Registers the device with the kernel. See Chapter 3 of Linux Device Drivers pages 55-56. */
+static int key_generator_init(void)
+{
+    //Question 26: When is key_generator_init called?
+    int result = 0;
+    printk( KERN_NOTICE "Key-Generator: Initialization started\n" );
+
+    result = register_device();
+    return result;
+}
+
+/*===============================================================================================*/
+/* Unregisters the device with the kernel. See Chapter 2 of Linux Device Drivers page 32. */
+static void key_generator_exit(void)
+{
+    //Question 27: When is key_generator_exit called?
+    printk( KERN_NOTICE "Key-Generator: Exiting\n" );
+    unregister_device();
+}
+
+/*===============================================================================================*/
+/* Specifies the init and exit functions for the kernel */
+module_init(key_generator_init);
+module_exit(key_generator_exit);
+
+/*===============================================================================================*/
+static struct file_operations simple_driver_fops =
+{
+    .owner = THIS_MODULE,
+    .read = key_generator_read,
+    .open = key_generator_open,
+    .release = key_generator_close,
+    .unlocked_ioctl = key_generator_ioctl
+};
+
+/*===============================================================================================*/
+static int device_file_major_number = 0;
+static const char device_name[] = "Key-Generator";
+static char keyBuffer[BUF_LEN];
+static int randomNumber=0;
+
+int register_device(void)
+{
+    int result = 0;
+
+    printk( KERN_NOTICE "Key-Generator: register_device() is called.\n" );
+
+    //Question 28: What variable will hold the major number for this device?
+    result = register_chrdev( 0, device_name, &simple_driver_fops );
+    if( result < 0 )
+    {
+        printk( KERN_WARNING "Key-Generator:  can\'t register character device with errorcode = %i\n", result );
+        return result;
+    }
+
+    device_file_major_number = result;
+    printk( KERN_NOTICE "Key-Generator: registered character device with major number = %i and minor numbers 0...255\n"
+        , device_file_major_number );
+
+    randomNumber = ((randomNumber + 1)*100000000/17)%99999999;
+    sprintf(keyBuffer, "%d", randomNumber);
+    //Question 29: Where does printk appear?
+    printk(KERN_NOTICE "Key-Generator: randomNumber %d keyBuffer %s\n", randomNumber, keyBuffer);
+    return 0;
+}
+
+/*===============================================================================================*/
+void unregister_device(void)
+{
+    printk( KERN_NOTICE "Key-Generator: unregister_device() is called\n" );
+    if(device_file_major_number != 0)
+    {
+        unregister_chrdev(device_file_major_number, device_name);
+    }
+}
+
+
+/*===============================================================================================*/
+static int key_generator_open(struct inode *inode, struct file *file)
+{
+    printk(KERN_INFO "Key-Generator: open() is called\n");
+    return 0;
+}
+
+/*===============================================================================================*/
+static int key_generator_close(struct inode *inode, struct file *file)
+{
+    printk(KERN_INFO "Key-Generator: close() is called\n");
+    return 0;
+}
+
+/*===============================================================================================*/
+static ssize_t key_generator_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
+{
+    unsigned long ret;
+    unsigned long length = strlen(keyBuffer)+1;
+    printk(KERN_INFO "Key-Generator: read %s\n", keyBuffer);
+    //Question 30: Would memcpy work instead (yes/no/probably)?
+    ret=copy_to_user(buf, keyBuffer, length);
+    return length-ret;
+}
+
+static long key_generator_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+    switch(cmd) {
+        case KEY_GENERATOR_CHANGE_KEY:
+	    printk(KERN_INFO "Key-Generator: ioctl KEY_GENERATOR_CHANGE_KEY\n");
+            randomNumber = ((randomNumber + 1)*100000000/17)%99999999;
+            sprintf(keyBuffer, "%d", randomNumber);
+            break;
+    }
+    return 0;
+}
+//keyGenerator.h - header file for the key generator
+//
+// 11-Feb-21  M. Watler         Created
+//
+
+//Question 31: What does _IOW indicate about this ioctl?
+#define KEY_GENERATOR_CHANGE_KEY _IOW('a','b',int*)
+#!/bin/sh
+module="Key-Generator"
+device="keygen"
+
+#Question 32: What is the following line doing?
+/sbin/insmod ./$module.ko
+
+rm -f /dev/${device}
+
+#Question 33: From what file is the major number being extracted from in the following line?
+major=`awk "\\$2==\"$module\" {print \\$1}" /proc/devices`
+
+#Question 34: What is the following line doing?
+mknod /dev/${device} c $major 0
+
+# permit the file to be accessible from user space
+chmod 666 /dev/${device}
+#!/bin/sh
+module="Key-Generator"
+device="keygen"
+
+#Question 35: What is the following line doing?
+/sbin/rmmod ./$module.ko
+
+# remove stale node
+rm -f /dev/${device}
