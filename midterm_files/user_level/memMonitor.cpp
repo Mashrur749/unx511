@@ -36,6 +36,7 @@ int main(int argc, char *argv[])
     strncpy(key1, argv[1], MAXBUF);
     fd=open(keyFile, O_RDWR);
     //Question 13: This appears to be reading a file under /dev. What is it really doing?
+    //this accesses the /dev/keygen file, and tries to read MAXBUF bytes data from that file descriptor and store it in key2 variable 
     read(fd, key2, MAXBUF);
     close(fd);
     valid=strcmp(key1, key2);
@@ -43,7 +44,10 @@ int main(int argc, char *argv[])
         cout<<"Invalid key, aborting..."<<endl;
     } else {
         //Question 14: What happens if memMonitor receives a SIGKILL?
+        //SIGKILL and SIGSTOP signals cannot be handled hence, if memMonitor receives SIGKILL it'll by default kill the process 
         //Question 15: What happens if memMonitor receives a ctrl-C?
+        //receives a SIGINT signal
+        //and prints "memMonitor: SIGINT received"
         struct sigaction action;
         action.sa_handler = sigHandler;
         sigemptyset(&action.sa_mask);
@@ -51,8 +55,17 @@ int main(int argc, char *argv[])
         sigaction(SIGINT, &action, NULL);
 
         //Question 16: Describe these open flags
+        //O_RDWR -> read write
+        //O_CREAT -> create the file if it doesn't exist
+        //O_APPEND -> the file gets openned in append mode, so write function will append content
         int openFlags = O_RDWR | O_CREAT | O_APPEND;
         //Question 17: Describe these file permissions
+        // S_IRUSR ->  grants read permission to the users
+        // S_IWUSR ->  grants write permission to the users
+        // S_IRGRP ->  grants read permission to groups
+        // S_IWGRP ->  grants write permission to groups
+        // S_IROTH ->  grants read permission to others
+        // S_IWOTH ->  grants write permission to others
         mode_t filePerms = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
         fdOut = open(logFile, openFlags, filePerms);
         string modelName, cpuMhz;

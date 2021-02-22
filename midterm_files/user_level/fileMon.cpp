@@ -33,8 +33,13 @@ int main(int argc, char *argv[])
     read(fd, key2, MAXBUF);
     close(fd);
     //Question 18: Where is key1 coming from?
+    //from command line arguments 
     //Question 19: Where is key2 coming from?
+    //from the /dev/keygen file descriptor
     //Question 20: Why are they being compared?
+    //the kernel code is generating a random number, the commandline argument sent has to match that
+    //number for the key to be valid
+
     int valid=strcmp(key1, key2);
     if(valid!=0) {
         cout<<"Invalid key, aborting..."<<endl;
@@ -53,8 +58,9 @@ int main(int argc, char *argv[])
                 int openFlags = O_RDWR | O_CREAT | O_TRUNC;
                 mode_t filePerms = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
 		//Question 21: What do the following two lines effectively do to the log file?
+        //opens the log file with flags mentioned in openFlags, with the permissions set in filePerms
                 fd=open(logFile, openFlags, filePerms);
-		close(fd);
+		        close(fd);
             }
             sleep(1);
         }
