@@ -6,6 +6,10 @@ FILES2=memMonitor.cpp
 FILES3=fileMon.cpp
 
 #Question 1: How many binaries are created if "make all" is executed from the command line?
+
+
+three
+
 processMon: $(FILES1)
 	$(CC) $(CFLAGS) $(FILES1) -o processMon
 
@@ -19,7 +23,9 @@ clean:
 	rm -f *.o processMon memMonitor fileMon
 
 all: processMon memMonitor fileMon
-\n\n
+
+
+
 //processMon.cpp - A process monitor for memory usage
 //
 // 11-Feb-21  M. Watler         Created.
@@ -60,6 +66,9 @@ static void sigHandler(int sig) {
 int main()
 {
     //Question 2: What happens if the following is executed from the command line: "pkill -2 processMon"
+
+    receives a SIGINT signal, runs sigHandler function and prints "processMonitor: SIGINT received" on the console
+
     struct sigaction action;
     action.sa_handler = sigHandler;
     sigemptyset(&action.sa_mask);

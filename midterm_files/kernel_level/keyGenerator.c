@@ -13,6 +13,8 @@
 
 MODULE_DESCRIPTION("Key Generator Linux driver");
 //Question 25: What is the full name of this license?
+//General Public Licence
+
 MODULE_LICENSE("GPL");
 #define BUF_LEN 64
 
@@ -28,6 +30,8 @@ static long key_generator_ioctl(struct file *file, unsigned int cmd, unsigned lo
 static int key_generator_init(void)
 {
     //Question 26: When is key_generator_init called?
+    //when the module is loaded in the kernel
+
     int result = 0;
     printk( KERN_NOTICE "Key-Generator: Initialization started\n" );
 
@@ -40,6 +44,8 @@ static int key_generator_init(void)
 static void key_generator_exit(void)
 {
     //Question 27: When is key_generator_exit called?
+    //when module gets unloaded from kernel
+
     printk( KERN_NOTICE "Key-Generator: Exiting\n" );
     unregister_device();
 }
@@ -72,6 +78,7 @@ int register_device(void)
     printk( KERN_NOTICE "Key-Generator: register_device() is called.\n" );
 
     //Question 28: What variable will hold the major number for this device?
+    //result
     result = register_chrdev( 0, device_name, &simple_driver_fops );
     if( result < 0 )
     {
@@ -86,6 +93,7 @@ int register_device(void)
     randomNumber = ((randomNumber + 1)*100000000/17)%99999999;
     sprintf(keyBuffer, "%d", randomNumber);
     //Question 29: Where does printk appear?
+    //in the file /var/log/syslogs and /var/log/kern.log 
     printk(KERN_NOTICE "Key-Generator: randomNumber %d keyBuffer %s\n", randomNumber, keyBuffer);
     return 0;
 }
@@ -122,6 +130,7 @@ static ssize_t key_generator_read(struct file *filp, char __user *buf, size_t le
     unsigned long length = strlen(keyBuffer)+1;
     printk(KERN_INFO "Key-Generator: read %s\n", keyBuffer);
     //Question 30: Would memcpy work instead (yes/no/probably)?
+    //yes, because both are attempting to copy from the specified memory location
     ret=copy_to_user(buf, keyBuffer, length);
     return length-ret;
 }
