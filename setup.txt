@@ -1,0 +1,16 @@
+
+sudo apt update
+
+sudo apt install gcc
+
+
+sudo apt install g++
+
+
+sudo apt install vim
+
+sudo apt install make
+
+sudo apt install net-tools
+
+sudo apt install openssh-server
